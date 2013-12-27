@@ -30,6 +30,20 @@
 #include "mu-msg-priv.h"
 #include "mu-msg-part.h"
 
+struct _ForeachData {
+	MuMsgPartForeachFunc func;
+	gpointer             user_data;
+	MuMsg                *msg;
+	unsigned             index;
+	MuMsgOptions         opts;
+
+};
+typedef struct _ForeachData ForeachData;
+
+static void
+each_child (GMimeObject *parent, GMimeObject *part,
+	    ForeachData *fdata);
+
 static gboolean handle_children (MuMsg *msg,
 				 GMimeMessage *mime_msg, MuMsgOptions opts,
 				 unsigned index, MuMsgPartForeachFunc func,
@@ -309,7 +323,7 @@ static gboolean handle_mime_object (MuMsg *msg,
 				    GMimeObject *mobj, GMimeObject *parent,
 				    MuMsgOptions opts,
 				    unsigned index, MuMsgPartForeachFunc func,
-				    gpointer user_data);
+				    gpointer user_data, ForeachData *fdata);
 
 #define SIG_STATUS_REPORT "sig-status-report"
 
@@ -373,7 +387,7 @@ static gboolean
 handle_encrypted_part (MuMsg *msg,
 		       GMimeMultipartEncrypted *part, GMimeObject *parent,
 		       MuMsgOptions opts, unsigned index,
-		       MuMsgPartForeachFunc func, gpointer user_data)
+		       MuMsgPartForeachFunc func, gpointer user_data, ForeachData *fdata)
 {
 	GError *err;
 	GMimeObject *dec;
@@ -395,7 +409,7 @@ handle_encrypted_part (MuMsg *msg,
 	if (dec) {
 		gboolean rv;
 		rv = handle_mime_object (msg, dec, parent, opts,
-					 index + 1, func, user_data);
+					 index + 1, func, user_data, fdata);
 		g_object_unref (dec);
 		return rv;
 	}
@@ -486,7 +500,7 @@ handle_message_part (MuMsg *msg, GMimeMessagePart *mimemsgpart, GMimeObject *par
 static gboolean
 handle_mime_object (MuMsg *msg,
 		    GMimeObject *mobj, GMimeObject *parent, MuMsgOptions opts,
-		    unsigned index, MuMsgPartForeachFunc func, gpointer user_data)
+		    unsigned index, MuMsgPartForeachFunc func, gpointer user_data, ForeachData *fdata)
 {
 	if (GMIME_IS_PART (mobj))
 		return handle_part
@@ -504,19 +518,12 @@ handle_mime_object (MuMsg *msg,
 		GMIME_IS_MULTIPART_ENCRYPTED (mobj))
 		return handle_encrypted_part
 			(msg, GMIME_MULTIPART_ENCRYPTED (mobj),
-			 parent, opts, index, func, user_data);
+			 parent, opts, index, func, user_data, fdata);
+	g_mime_multipart_foreach ((GMimeMultipart *)mobj, (GMimeObjectForeachFunc)each_child,
+			fdata);
 	return TRUE;
 }
 
-struct _ForeachData {
-	MuMsgPartForeachFunc func;
-	gpointer             user_data;
-	MuMsg                *msg;
-	unsigned             index;
-	MuMsgOptions         opts;
-
-};
-typedef struct _ForeachData ForeachData;
 
 static void
 each_child (GMimeObject *parent, GMimeObject *part,
@@ -528,7 +535,7 @@ each_child (GMimeObject *parent, GMimeObject *part,
 			    fdata->opts,
 			    fdata->index++,
 			    fdata->func,
-			    fdata->user_data);
+			    fdata->user_data, fdata);
 }
 
 
